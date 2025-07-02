@@ -1,46 +1,20 @@
-import { useAccount, useConnect, useDisconnect } from 'wagmi'
+// src/App.tsx
+
+import { AuctionActivity } from './components/AuctionActivity';
+import { SettingsPage } from './components/SettingsPage';
 
 function App() {
-  const account = useAccount()
-  const { connectors, connect, status, error } = useConnect()
-  const { disconnect } = useDisconnect()
+  const nounIdToTest = 25;
 
   return (
-    <>
-      <div>
-        <h2>Account</h2>
-
-        <div>
-          status: {account.status}
-          <br />
-          addresses: {JSON.stringify(account.addresses)}
-          <br />
-          chainId: {account.chainId}
-        </div>
-
-        {account.status === 'connected' && (
-          <button type="button" onClick={() => disconnect()}>
-            Disconnect
-          </button>
-        )}
-      </div>
-
-      <div>
-        <h2>Connect</h2>
-        {connectors.map((connector) => (
-          <button
-            key={connector.uid}
-            onClick={() => connect({ connector })}
-            type="button"
-          >
-            {connector.name}
-          </button>
-        ))}
-        <div>{status}</div>
-        <div>{error?.message}</div>
-      </div>
-    </>
-  )
+    <div style={{ fontFamily: 'sans-serif', padding: '20px' }}>
+      <h1 style={{ borderBottom: '1px solid #eee', paddingBottom: '10px' }}>
+        Testing Auction Activity
+      </h1>
+      <AuctionActivity nounId={nounIdToTest} />
+      <SettingsPage />
+    </div>
+  );
 }
 
-export default App
+export default App;
