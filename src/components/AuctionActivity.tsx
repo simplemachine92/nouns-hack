@@ -180,7 +180,7 @@ export const AuctionActivity = () => {
   const handleNext = () => setCurrentIndex(prev => Math.max(0, prev - 1));
   
   if ((loading && !data) || (areSeedsLoading && preloadedNouns.size === 0 && processedAuctions.length > 0)) {
-    return <div>Loading auction activity...</div>;
+    return <AuctionActivitySkeleton/>;
   }
   if (error) {
     console.error(error);

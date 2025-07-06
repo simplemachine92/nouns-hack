@@ -12,6 +12,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   input: { width: '100%', padding: '12px 16px 12px 36px', fontSize: '16px', fontWeight: 500, borderRadius: '12px', border: '1px solid #D1D5DB', backgroundColor: '#fff', boxSizing: 'border-box', color: '#111827' },
   button: { width: '100%', padding: '12px 16px', fontSize: '16px', fontWeight: 600, borderRadius: '12px', border: 'none', backgroundColor: '#373737', color: '#fff', cursor: 'pointer', marginTop: '12px', transition: 'background-color 0.2s' },
   buttonDisabled: { backgroundColor: '#D1D5DB', cursor: 'not-allowed' },
+  buttonError: { backgroundColor: '#EF4444' },
   error: { color: '#EF4444', fontSize: '14px', marginTop: '8px' },
 };
 
@@ -25,13 +26,16 @@ export const BidInterface = ({ auctionId, currentBid, onBidSuccess }: BidInterfa
   const [bidAmount, setBidAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
   
-  // Destructure the specific address we need from the updated context
   const { nounsAuctionHouseAddress } = useConfigurableContracts();
   
   const { data: hash, isPending: isConfirming, writeContract } = useWriteContract();
   const { isLoading: isBidding, isSuccess: isBidSuccessful } = useWaitForTransactionReceipt({ hash });
   
-  const { data: fetchedIncrement, isLoading: isIncrementLoading } = useReadContract({
+  const { 
+    data: fetchedIncrement, 
+    isLoading: isIncrementLoading,
+    isError: isIncrementError,
+  } = useReadContract({
       abi: NounsAuctionHouseABI,
       address: nounsAuctionHouseAddress,
       functionName: 'minBidIncrementPercentage',
@@ -41,15 +45,13 @@ export const BidInterface = ({ auctionId, currentBid, onBidSuccess }: BidInterfa
   });
 
   const minBidWei = useMemo(() => {
-    if (typeof fetchedIncrement === 'undefined') {
-      return null;
-    }
+    // This guard correctly handles the loading and error states where data is undefined/null.
     if (fetchedIncrement == null) {
       return null;
     }
     const currentBidBigInt = BigInt(currentBid);
+
     const incrementPercentage = BigInt(fetchedIncrement as bigint);
-    console.log('increment', incrementPercentage)
     
     const increment = (currentBidBigInt * incrementPercentage) / 100n;
     return currentBidBigInt + increment;
@@ -95,8 +97,12 @@ export const BidInterface = ({ auctionId, currentBid, onBidSuccess }: BidInterfa
     });
   };
   
-  const isButtonDisabled = isConfirming || isBidding || isIncrementLoading;
-  const buttonText = isIncrementLoading ? 'Loading...' : isConfirming ? 'Confirm in wallet...' : isBidding ? 'Submitting bid...' : 'Place Bid';
+  const isButtonDisabled = isConfirming || isBidding || isIncrementLoading || isIncrementError;
+  const buttonText = isIncrementError ? 'Contract Error: Check Settings' 
+                   : isIncrementLoading ? 'Loading...' 
+                   : isConfirming ? 'Confirm in wallet...' 
+                   : isBidding ? 'Submitting bid...' 
+                   : 'Place Bid';
 
   return (
     <div style={styles.container}>
@@ -108,7 +114,7 @@ export const BidInterface = ({ auctionId, currentBid, onBidSuccess }: BidInterfa
           min={minBidEth}
           value={bidAmount}
           onChange={(e) => setBidAmount(e.target.value)}
-          placeholder={isIncrementLoading ? 'Loading...' : minBidEth}
+          placeholder={isIncrementError ? 'Cannot calculate bid' : isIncrementLoading ? 'Loading...' : minBidEth}
           style={styles.input}
           disabled={isButtonDisabled}
         />
@@ -116,7 +122,11 @@ export const BidInterface = ({ auctionId, currentBid, onBidSuccess }: BidInterfa
       <button
         onClick={handlePlaceBid}
         disabled={isButtonDisabled}
-        style={{ ...styles.button, ...(isButtonDisabled && styles.buttonDisabled) }}
+        style={{ 
+          ...styles.button, 
+          ...(isButtonDisabled && styles.buttonDisabled),
+          ...(isIncrementError && styles.buttonError),
+        }}
       >
         {buttonText}
       </button>
