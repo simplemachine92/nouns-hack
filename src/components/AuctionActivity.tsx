@@ -1,11 +1,10 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@apollo/client';
 import { format } from 'date-fns';
-
-// 1. Import your query, types, and config
 import { latestAuctionsQuery } from '../lib/subgraph'; // Or wherever your queries are defined
 import { GetLatestAuctionsQuery, GetLatestAuctionsQueryVariables } from '../gql/graphql';
 import { buildExplorerLink } from '../../config'; // Corrected path
+import { Noun } from './NounsDisplay';
 
 // 2. Interfaces for the "clean" data. They define a strict contract.
 interface ProcessedBid {
@@ -24,7 +23,6 @@ interface ProcessedAuction {
   settled: boolean;
   bids: ProcessedBid[];
 }
-
 
 // --- Helper Components ---
 const EthAmount = ({ ethAmount }: { ethAmount: string | bigint }) => {
@@ -56,7 +54,6 @@ export const AuctionActivity = () => {
     }
 
     return data.auctions.map(auction => {
-      // Use .flatMap to both map and filter out bids that don't have a bidder
       const bids: ProcessedBid[] = [...auction.bids]
         .sort((a, b) => Number(a.blockTimestamp) - Number(b.blockTimestamp))
         .flatMap(bid => {
@@ -64,6 +61,7 @@ export const AuctionActivity = () => {
           if (!bid.bidder?.id || !bid.txHash) {
             return []; // flatMap will remove this empty array from the result
           }
+
           // Otherwise, return a clean bid object in an array
           return [{
             nounId: auction.id,
@@ -78,7 +76,6 @@ export const AuctionActivity = () => {
         nounId: auction.id,
         endTime: format(new Date(Number(auction.endTime) * 1000), 'MMM d, yyyy, h:mm a'),
         
-        // THIS IS THE FIX for the 'winner' property:
         // Only create the winner object if the auction is settled AND a winner ID exists.
         winner: (auction.settled && auction.bidder?.id) ? { id: auction.bidder.id } : undefined,
         
@@ -103,6 +100,9 @@ export const AuctionActivity = () => {
       {processedAuctions.map(auction => (
         <div key={auction.nounId} style={{ border: '1px solid #e2e8f0', padding: '16px', borderRadius: '8px' }}>
           <h2 className="text-2xl font-bold">Auction for Noun {auction.nounId}</h2>
+          {/* <Noun
+          nounId={BigInt(auction.nounId)} 
+          /> */}
           <p className="text-sm text-gray-600">Ended on {auction.endTime}</p>
 
           <div className="mt-4">

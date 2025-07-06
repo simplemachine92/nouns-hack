@@ -2,9 +2,6 @@
 
 import { mainnet } from 'viem/chains';
 
-// The official Nouns Auction House contract address on the Arbitrum One network.
-export const NOUNS_AUCTION_HOUSE_ADDRESS = '0xF15a943787014461d94da08aD4040f79Cd7c124e';
-
 // Set your project's default chain.
 export const DEFAULT_CHAIN = mainnet;
 
