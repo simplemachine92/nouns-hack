@@ -49,6 +49,7 @@ export const BidInterface = ({ auctionId, currentBid, onBidSuccess }: BidInterfa
     }
     const currentBidBigInt = BigInt(currentBid);
     const incrementPercentage = BigInt(fetchedIncrement as bigint);
+    console.log('increment', incrementPercentage)
     
     const increment = (currentBidBigInt * incrementPercentage) / 100n;
     return currentBidBigInt + increment;

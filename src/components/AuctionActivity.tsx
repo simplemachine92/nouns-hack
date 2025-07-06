@@ -2,20 +2,21 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@apollo/client';
 import { format } from 'date-fns';
-// Removed unused imports like getNounData to keep it clean
 import { Noun } from './NounsDisplay';
 import { Countdown } from './Countdown';
-import { BidInterface } from './BidInterface'; // Import the new component
+import { BidInterface } from './BidInterface';
 import { useEnsName, useReadContracts } from 'wagmi';
 import { nounsTokenAbi } from '../contracts/nouns-token.gen';
 import { useConfigurableContracts } from '../contexts/ConfigurableContractProvider';
 import { GetLatestAuctionsQuery, GetLatestAuctionsQueryVariables } from '../gql/graphql';
 import { latestAuctionsQuery } from '../lib/subgraph';
-import { getNounData, ImageData } from '@noundry/nouns-assets'; // Re-adding these
+import { getNounData, ImageData } from '@noundry/nouns-assets';
 import { buildSVG } from '@nouns/sdk';
+// NEW: Import the blockies library
+import makeBlockie from 'ethereum-blockies-base64';
 
 
-// --- STYLES (No changes from previous version) ---
+// --- STYLES (No changes needed) ---
 const styles: { [key: string]: React.CSSProperties } = {
   activityContainer: { backgroundColor: '#F7F7F7', borderRadius: '16px', padding: '24px', maxWidth: '500px', margin: '0 auto', fontFamily: 'sans-serif', color: '#111827' },
   navigator: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' },
@@ -33,13 +34,28 @@ const styles: { [key: string]: React.CSSProperties } = {
   bidList: { display: 'flex', flexDirection: 'column', gap: '16px' },
   bidItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   bidderInfo: { display: 'flex', alignItems: 'center', gap: '12px' },
+  // bidderAvatar style is no longer used but kept for potential fallbacks
   bidderAvatar: { width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#E5E7EB' },
   bidderName: { color: '#111827', textDecoration: 'none', fontWeight: 500, fontSize: '16px' },
   bidAmountContainer: { display: 'flex', alignItems: 'center', gap: '8px' },
   ethAmount: { fontWeight: 500, fontSize: '16px' },
   externalLinkIcon: { fontSize: '14px', color: '#9CA3AF', textDecoration: 'none' },
-  viewAllBids: { textAlign: 'center', marginTop: '24px', color: '#6B7280', fontWeight: 500, fontSize: '14px', cursor: 'pointer' },
-  winnerInfo: { padding: '24px 0', fontSize: '18px', textAlign: 'center', borderBottom: '1px solid #E5E7EB', marginBottom: '24px' },
+  viewAllBids: { textAlign: 'center' as const, marginTop: '24px', color: '#6B7280', fontWeight: 500, fontSize: '14px', cursor: 'pointer' },
+  wonByContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: '8px',
+    marginTop: '16px',
+    marginBottom: '16px',
+    fontSize: '16px',
+    color: '#6B7280', // "Won by" and "for" text color
+  },
+  wonByAddress: {
+    color: '#111827', // Darker color for address and amount
+    fontWeight: 500,
+    textDecoration: 'none',
+  },
   addressLink: { color: '#111827', fontWeight: 600, textDecoration: 'none' },
 };
 
@@ -47,6 +63,23 @@ const styles: { [key: string]: React.CSSProperties } = {
 interface ProcessedBid { sender: `0x${string}`; value: string; transactionHash: string; blockTimestamp: number; }
 interface ProcessedAuction { nounId: string; endTime: number; winner?: `0x${string}`; amount: string; settled: boolean; bids: ProcessedBid[]; }
 const EthAmount = ({ eth, style }: { eth: string; style?: React.CSSProperties }) => <span style={style}>Ξ {Number(Number(eth) / 1e18).toFixed(2)}</span>;
+
+// NEW: A dedicated component for the blockie avatar
+const BlockieAvatar = ({ address, size }: { address: `0x${string}`; size: number }) => {
+  const blockieDataUrl = makeBlockie(address);
+  return (
+    <img 
+      src={blockieDataUrl} 
+      alt={`Blockie for ${address}`}
+      style={{ 
+        width: `${size}px`, 
+        height: `${size}px`, 
+        borderRadius: '50%' 
+      }} 
+    />
+  );
+};
+
 const AddressDisplay = ({ address, style }: { address: `0x${string}`; style?: React.CSSProperties }) => {
   const { data: ensName } = useEnsName({ address });
   const explorerUrl = `https://etherscan.io/address/${address}`;
@@ -54,7 +87,7 @@ const AddressDisplay = ({ address, style }: { address: `0x${string}`; style?: Re
   return <a href={explorerUrl} target="_blank" rel="noopener noreferrer" style={style}>{displayName}</a>;
 };
 
-// --- AUCTION DETAIL VIEW ---
+// --- AUCTION DETAIL VIEW (UPDATED to use Blockies) ---
 const AuctionDetailView = ({ auction, preloadedDataUrl, onBidSuccess }: { auction: ProcessedAuction; preloadedDataUrl?: string; onBidSuccess: () => void; }) => (
   <div>
     <h2 style={styles.title}>Noun {auction.nounId}</h2>
@@ -62,33 +95,31 @@ const AuctionDetailView = ({ auction, preloadedDataUrl, onBidSuccess }: { auctio
       <Noun nounId={BigInt(auction.nounId)} preloadedDataUrl={preloadedDataUrl} loadingTransitionDelay={0} />
     </div>
     {auction.settled && auction.winner ? (
-      <div style={styles.winnerInfo}>
-        Won by <AddressDisplay address={auction.winner} style={styles.addressLink} /> for <EthAmount eth={auction.amount} style={{...styles.addressLink, marginLeft: '4px'}} />
+      <div style={styles.wonByContainer}>
+        Won by{' '}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginLeft: '4px' }}>
+          <BlockieAvatar address={auction.winner} size={24} />
+          <AddressDisplay address={auction.winner} style={styles.wonByAddress} />
+        </span>
+        {' '}for <EthAmount eth={auction.amount} style={{...styles.wonByAddress}} />
       </div>
     ) : (
       <>
         <div style={styles.auctionInfoContainer}>
-          <div style={styles.infoBlock}>
-            <div style={styles.infoLabel}>Current bid</div>
-            <EthAmount eth={auction.amount} style={styles.infoValue} />
-          </div>
+          <div style={styles.infoBlock}><div style={styles.infoLabel}>Current bid</div><EthAmount eth={auction.amount} style={styles.infoValue} /></div>
           <div style={styles.separator}></div>
-          <div style={styles.infoBlock}>
-            <div style={styles.infoLabel}>Auction ends in</div>
-            <Countdown endTime={auction.endTime} />
-          </div>
+          <div style={styles.infoBlock}><div style={styles.infoLabel}>Auction ends in</div><Countdown endTime={auction.endTime} /></div>
         </div>
-        <BidInterface
-          auctionId={BigInt(auction.nounId)}
-          currentBid={auction.amount}
-          onBidSuccess={onBidSuccess}
-        />
+        <BidInterface auctionId={BigInt(auction.nounId)} currentBid={auction.amount} onBidSuccess={onBidSuccess} />
       </>
     )}
     <div style={styles.bidList}>
       {auction.bids.slice(0, 3).map((bid) => (
         <div key={bid.transactionHash} style={styles.bidItem}>
-          <div style={styles.bidderInfo}><div style={styles.bidderAvatar} /><AddressDisplay address={bid.sender} style={styles.bidderName} /></div>
+          <div style={styles.bidderInfo}>
+            <BlockieAvatar address={bid.sender} size={24} />
+            <AddressDisplay address={bid.sender} style={styles.bidderName} />
+          </div>
           <div style={styles.bidAmountContainer}><EthAmount eth={bid.value} style={styles.ethAmount} /><a href={`https://etherscan.io/tx/${bid.transactionHash}`} target="_blank" rel="noopener noreferrer" style={styles.externalLinkIcon}>↗</a></div>
         </div>
       ))}
@@ -98,17 +129,15 @@ const AuctionDetailView = ({ auction, preloadedDataUrl, onBidSuccess }: { auctio
   </div>
 );
 
-// --- MAIN EXPORTED COMPONENT ---
+// --- MAIN EXPORTED COMPONENT (No changes needed here) ---
 export const AuctionActivity = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const { nounsTokenAddress: nounsTokenAddress } = useConfigurableContracts();
+  const { nounsTokenAddress } = useConfigurableContracts();
   
-  // Destructure the refetch function from useQuery
   const { data, loading, error, refetch } = useQuery<GetLatestAuctionsQuery, GetLatestAuctionsQueryVariables>(
     latestAuctionsQuery, { variables: { first: 25 }, fetchPolicy: 'cache-and-network', notifyOnNetworkStatusChange: true }
   );
   
-  // The rest of the logic remains the same...
   const processedAuctions = useMemo((): ProcessedAuction[] => {
     if (!data?.auctions) return [];
     return data.auctions.map(auction => ({
@@ -176,7 +205,7 @@ export const AuctionActivity = () => {
       <AuctionDetailView
         auction={currentAuction}
         preloadedDataUrl={preloadedNouns.get(currentAuction.nounId)}
-        onBidSuccess={() => refetch()} // Pass the refetch function as the callback
+        onBidSuccess={() => refetch()}
       />
     </div>
   );
