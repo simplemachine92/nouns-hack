@@ -1,47 +1,73 @@
 // src/contexts/ConfigurableContractProvider.tsx
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useAccount } from 'wagmi';
-import { nounsTokenAddress } from '../contracts/nouns-token.gen';
+// Import default addresses for BOTH contracts
+import { nounsTokenAddress as defaultNounsTokenAddresses } from '../contracts/nouns-token.gen';
+import { nounsAuctionHouseAddress as defaultAuctionHouseAddresses } from '../contracts/nouns-auction-house.gen';
 
+// Define distinct local storage keys for each contract
+const TOKEN_STORAGE_KEY = 'customNounsTokenAddress';
+const AUCTION_HOUSE_STORAGE_KEY = 'customNounsAuctionHouseAddress';
+
+// Update the context to provide both addresses and their setters
 interface ConfigurableContractContextType {
-  contractAddress: `0x${string}`;
-  setContractAddress: (address: `0x${string}`) => void;
-  defaultAddress: `0x${string}`;
+  nounsTokenAddress: `0x${string}`;
+  setNounsTokenAddress: (address: `0x${string}`) => void;
+  defaultNounsTokenAddress: `0x${string}`;
+  
+  nounsAuctionHouseAddress: `0x${string}`;
+  setNounsAuctionHouseAddress: (address: `0x${string}`) => void;
+  defaultAuctionHouseAddress: `0x${string}`;
 }
-
-const LOCAL_STORAGE_KEY = 'customNounsTokenAddress';
 
 export const ConfigurableContractContext = createContext<ConfigurableContractContextType | null>(null);
 
 export const ConfigurableContractProvider = ({ children }: { children: ReactNode }) => {
-  // This hook is what causes the dependency on WagmiProvider
   const { chain } = useAccount(); 
 
-  // FIX: Safely determine the default address for the current chain.
-  // When `chain` is undefined (not connected), this will now correctly fall back.
-  const defaultAddressForChain = (chain ? nounsTokenAddress[chain.id] : undefined) || nounsTokenAddress[1];
+  // Determine defaults for the current chain for BOTH contracts
+  const defaultNounsTokenAddress = (chain ? defaultNounsTokenAddresses[chain.id] : undefined) || defaultNounsTokenAddresses[1];
+  const defaultAuctionHouseAddress = (chain ? defaultAuctionHouseAddresses[chain.id] : undefined) || defaultAuctionHouseAddresses[1];
 
-  const [contractAddress, setContractAddressState] = useState<`0x${string}`>(() => {
-    return (localStorage.getItem(LOCAL_STORAGE_KEY) as `0x${string}`) || defaultAddressForChain;
+  // --- State for Nouns Token ---
+  const [nounsTokenAddress, setNounsTokenAddressState] = useState<`0x${string}`>(() => {
+    return (localStorage.getItem(TOKEN_STORAGE_KEY) as `0x${string}`) || defaultNounsTokenAddress;
   });
 
-  const setContractAddress = (newAddress: `0x${string}`) => {
-    localStorage.setItem(LOCAL_STORAGE_KEY, newAddress);
-    setContractAddressState(newAddress);
+  const setNounsTokenAddress = (newAddress: `0x${string}`) => {
+    localStorage.setItem(TOKEN_STORAGE_KEY, newAddress);
+    setNounsTokenAddressState(newAddress);
+  };
+  
+  // --- State for Nouns Auction House ---
+  const [nounsAuctionHouseAddress, setNounsAuctionHouseAddressState] = useState<`0x${string}`>(() => {
+    return (localStorage.getItem(AUCTION_HOUSE_STORAGE_KEY) as `0x${string}`) || defaultAuctionHouseAddress;
+  });
+  
+  const setNounsAuctionHouseAddress = (newAddress: `0x${string}`) => {
+    localStorage.setItem(AUCTION_HOUSE_STORAGE_KEY, newAddress);
+    setNounsAuctionHouseAddressState(newAddress);
   };
 
+  // Effect to update defaults when chain changes
   useEffect(() => {
-    const storedAddress = localStorage.getItem(LOCAL_STORAGE_KEY);
-    // If no custom address is set, follow the chain's default
-    if (!storedAddress) {
-      setContractAddressState(defaultAddressForChain);
+    // If no custom token address is set, follow the chain's default
+    if (!localStorage.getItem(TOKEN_STORAGE_KEY)) {
+      setNounsTokenAddressState(defaultNounsTokenAddress);
     }
-  }, [chain, defaultAddressForChain]);
+    // If no custom auction house address is set, follow the chain's default
+    if (!localStorage.getItem(AUCTION_HOUSE_STORAGE_KEY)) {
+      setNounsAuctionHouseAddressState(defaultAuctionHouseAddress);
+    }
+  }, [chain, defaultNounsTokenAddress, defaultAuctionHouseAddress]);
 
   const contextValue: ConfigurableContractContextType = {
-    contractAddress,
-    setContractAddress,
-    defaultAddress: defaultAddressForChain,
+    nounsTokenAddress,
+    setNounsTokenAddress,
+    defaultNounsTokenAddress,
+    nounsAuctionHouseAddress,
+    setNounsAuctionHouseAddress,
+    defaultAuctionHouseAddress,
   };
 
   return (

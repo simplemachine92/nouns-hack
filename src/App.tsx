@@ -53,18 +53,14 @@ function App() {
         <ConfigurableApolloProvider>
           <ConfigurableContractProvider>
             <div style={{ fontFamily: 'sans-serif', padding: '20px' }}>
-              <h1 style={{ borderBottom: '1px solid #eee', paddingBottom: '10px' }}>
-                Testing Auction Activity
-              </h1>
+              <Wallet/>
+              <AuctionActivity />
               <SettingsPage
                 inputValue={inputValue}
                 setInputValue={setInputValue}
                 handleApplyRpc={handleApplyRpc}
                 activeRpcUrl={activeRpcUrl}
               />
-              <Wallet/>
-              <AuctionActivity />
-
               <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '2rem 0' }} />
             </div>
           </ConfigurableContractProvider>

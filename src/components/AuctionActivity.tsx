@@ -1,148 +1,183 @@
-import React, { useMemo } from 'react';
+// src/components/AuctionActivity.tsx
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@apollo/client';
 import { format } from 'date-fns';
-import { latestAuctionsQuery } from '../lib/subgraph'; // Or wherever your queries are defined
-import { GetLatestAuctionsQuery, GetLatestAuctionsQueryVariables } from '../gql/graphql';
-import { buildExplorerLink } from '../../config'; // Corrected path
+// Removed unused imports like getNounData to keep it clean
 import { Noun } from './NounsDisplay';
+import { Countdown } from './Countdown';
+import { BidInterface } from './BidInterface'; // Import the new component
+import { useEnsName, useReadContracts } from 'wagmi';
+import { nounsTokenAbi } from '../contracts/nouns-token.gen';
+import { useConfigurableContracts } from '../contexts/ConfigurableContractProvider';
+import { GetLatestAuctionsQuery, GetLatestAuctionsQueryVariables } from '../gql/graphql';
+import { latestAuctionsQuery } from '../lib/subgraph';
+import { getNounData, ImageData } from '@noundry/nouns-assets'; // Re-adding these
+import { buildSVG } from '@nouns/sdk';
 
-// 2. Interfaces for the "clean" data. They define a strict contract.
-interface ProcessedBid {
-  nounId: string;
-  sender: string;
-  value: string;
-  transactionHash: string;
-  timestamp: string;
-}
 
-interface ProcessedAuction {
-  nounId: string;
-  endTime: string;
-  winner?: { id: string }; // If winner exists, its id MUST be a string
-  amount: string;
-  settled: boolean;
-  bids: ProcessedBid[];
-}
-
-// --- Helper Components ---
-const EthAmount = ({ ethAmount }: { ethAmount: string | bigint }) => {
-    const amountAsBigInt = typeof ethAmount === 'string' ? BigInt(ethAmount) : ethAmount;
-    const formatted = Number(amountAsBigInt) / 1e18;
-    return <span>Ξ {formatted.toFixed(3)}</span>;
+// --- STYLES (No changes from previous version) ---
+const styles: { [key: string]: React.CSSProperties } = {
+  activityContainer: { backgroundColor: '#F7F7F7', borderRadius: '16px', padding: '24px', maxWidth: '500px', margin: '0 auto', fontFamily: 'sans-serif', color: '#111827' },
+  navigator: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' },
+  navControls: { display: 'flex', alignItems: 'center', gap: '8px' },
+  navButton: { border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', backgroundColor: '#E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', color: '#4B5563' },
+  navButtonDisabled: { cursor: 'not-allowed', backgroundColor: '#F3F4F6', color: '#9CA3AF' },
+  navDate: { fontSize: '14px', color: '#6B7280', fontWeight: 500 },
+  title: { fontSize: '48px', fontWeight: 900, margin: '0 0 16px 0', lineHeight: 1.1 },
+  nounContainer: { marginBottom: '24px', borderRadius: '12px', overflow: 'hidden'},
+  auctionInfoContainer: { display: 'flex', paddingBottom: '24px', marginBottom: '24px', borderBottom: '1px solid #E5E7EB' },
+  infoBlock: { flex: 1 },
+  infoLabel: { fontSize: '14px', color: '#6B7280', marginBottom: '4px' },
+  infoValue: { fontSize: '28px', fontWeight: 700, color: '#111827' },
+  separator: { width: '1px', backgroundColor: '#E5E7EB', margin: '0 24px' },
+  bidList: { display: 'flex', flexDirection: 'column', gap: '16px' },
+  bidItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  bidderInfo: { display: 'flex', alignItems: 'center', gap: '12px' },
+  bidderAvatar: { width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#E5E7EB' },
+  bidderName: { color: '#111827', textDecoration: 'none', fontWeight: 500, fontSize: '16px' },
+  bidAmountContainer: { display: 'flex', alignItems: 'center', gap: '8px' },
+  ethAmount: { fontWeight: 500, fontSize: '16px' },
+  externalLinkIcon: { fontSize: '14px', color: '#9CA3AF', textDecoration: 'none' },
+  viewAllBids: { textAlign: 'center', marginTop: '24px', color: '#6B7280', fontWeight: 500, fontSize: '14px', cursor: 'pointer' },
+  winnerInfo: { padding: '24px 0', fontSize: '18px', textAlign: 'center', borderBottom: '1px solid #E5E7EB', marginBottom: '24px' },
+  addressLink: { color: '#111827', fontWeight: 600, textDecoration: 'none' },
 };
 
-const TransactionLink = ({ hash, children }: { hash: string; children: React.ReactNode }) => (
-    <a href={`https://arbiscan.io/tx/${hash}`} target="_blank" rel="noreferrer" className="text-blue-500 underline">
-        {children}
-    </a>
-);
+// --- INTERFACES and HELPER COMPONENTS ---
+interface ProcessedBid { sender: `0x${string}`; value: string; transactionHash: string; blockTimestamp: number; }
+interface ProcessedAuction { nounId: string; endTime: number; winner?: `0x${string}`; amount: string; settled: boolean; bids: ProcessedBid[]; }
+const EthAmount = ({ eth, style }: { eth: string; style?: React.CSSProperties }) => <span style={style}>Ξ {Number(Number(eth) / 1e18).toFixed(2)}</span>;
+const AddressDisplay = ({ address, style }: { address: `0x${string}`; style?: React.CSSProperties }) => {
+  const { data: ensName } = useEnsName({ address });
+  const explorerUrl = `https://etherscan.io/address/${address}`;
+  const displayName = ensName || `${address.slice(0, 6)}...${address.slice(-4)}`;
+  return <a href={explorerUrl} target="_blank" rel="noopener noreferrer" style={style}>{displayName}</a>;
+};
 
-
-// --- Main Component ---
-export const AuctionActivity = () => {
-  const { data, loading, error } = useQuery<GetLatestAuctionsQuery, GetLatestAuctionsQueryVariables>(
-    latestAuctionsQuery,
-    {
-      variables: { first: 5 },
-    }
-  );
-
-  // 3. Use `useMemo` to safely transform raw data into our clean structure
-  const processedAuctions: ProcessedAuction[] = useMemo(() => {
-    if (!data?.auctions) {
-      return [];
-    }
-
-    return data.auctions.map(auction => {
-      const bids: ProcessedBid[] = [...auction.bids]
-        .sort((a, b) => Number(a.blockTimestamp) - Number(b.blockTimestamp))
-        .flatMap(bid => {
-          // If a bid is missing a bidder or txHash, skip it entirely.
-          if (!bid.bidder?.id || !bid.txHash) {
-            return []; // flatMap will remove this empty array from the result
-          }
-
-          // Otherwise, return a clean bid object in an array
-          return [{
-            nounId: auction.id,
-            sender: bid.bidder.id, // Now guaranteed to be a string
-            value: bid.amount,
-            transactionHash: bid.txHash,
-            timestamp: format(new Date(Number(bid.blockTimestamp) * 1000), 'h:mm:ss a'),
-          }];
-        });
-      
-      return {
-        nounId: auction.id,
-        endTime: format(new Date(Number(auction.endTime) * 1000), 'MMM d, yyyy, h:mm a'),
-        
-        // Only create the winner object if the auction is settled AND a winner ID exists.
-        winner: (auction.settled && auction.bidder?.id) ? { id: auction.bidder.id } : undefined,
-        
-        amount: auction.amount,
-        settled: auction.settled,
-        bids: bids, // Assign the clean, filtered bids
-      };
-    });
-  }, [data]);
-
-  
-  // --- Render Logic ---
-  if (loading) return <div>Loading latest auction activity...</div>;
-  if (error) {
-    console.error(error);
-    return <div>Error loading activity. Please check the console and your Graph URL settings.</div>;
-  }
-  if (processedAuctions.length === 0) return <div>No auction data found.</div>;
-
-  return (
-    <div className="space-y-8 p-4">
-      {processedAuctions.map(auction => (
-        <div key={auction.nounId} style={{ border: '1px solid #e2e8f0', padding: '16px', borderRadius: '8px' }}>
-          <h2 className="text-2xl font-bold">Auction for Noun {auction.nounId}</h2>
-          {/* <Noun
-          nounId={BigInt(auction.nounId)} 
-          /> */}
-          <p className="text-sm text-gray-600">Ended on {auction.endTime}</p>
-
-          <div className="mt-4">
-            {auction.settled && auction.winner && (
-            <div className="mt-4 pt-4 border-t">
-              <h3 className="font-bold text-green-600">Auction Settled</h3>
-              <p>
-                Won by <a href={buildExplorerLink(auction.winner.id)} target="_blank" rel="noreferrer" className="font-semibold">{auction.winner.id}</a> for <EthAmount ethAmount={auction.amount} />.
-              </p>
-            </div>
-          )}
-            <h3 className="font-semibold text-lg mb-2">Bids</h3>
-            {auction.bids.map(bid => (
-              <div key={bid.transactionHash} className="flex justify-between items-center p-2 border-b last:border-b-0">
-                <div>
-                  <p>
-                    Bid by <a href={buildExplorerLink(bid.sender)} target="_blank" rel="noreferrer" className="font-mono text-sm hover:text-blue-700">{bid.sender}</a>
-                  </p>
-                  <p className="text-xs text-gray-500">at {bid.timestamp}</p>
-                </div>
-                <div className="text-right">
-                  <EthAmount ethAmount={bid.value} />
-                  <TransactionLink hash={bid.transactionHash}>
-                      <span className="text-xs ml-2">[tx]</span>
-                  </TransactionLink>
-                </div>
-              </div>
-            ))}
+// --- AUCTION DETAIL VIEW ---
+const AuctionDetailView = ({ auction, preloadedDataUrl, onBidSuccess }: { auction: ProcessedAuction; preloadedDataUrl?: string; onBidSuccess: () => void; }) => (
+  <div>
+    <h2 style={styles.title}>Noun {auction.nounId}</h2>
+    <div style={styles.nounContainer}>
+      <Noun nounId={BigInt(auction.nounId)} preloadedDataUrl={preloadedDataUrl} loadingTransitionDelay={0} />
+    </div>
+    {auction.settled && auction.winner ? (
+      <div style={styles.winnerInfo}>
+        Won by <AddressDisplay address={auction.winner} style={styles.addressLink} /> for <EthAmount eth={auction.amount} style={{...styles.addressLink, marginLeft: '4px'}} />
+      </div>
+    ) : (
+      <>
+        <div style={styles.auctionInfoContainer}>
+          <div style={styles.infoBlock}>
+            <div style={styles.infoLabel}>Current bid</div>
+            <EthAmount eth={auction.amount} style={styles.infoValue} />
           </div>
-
-          {auction.settled && auction.winner && (
-            <div className="mt-4 pt-4 border-t">
-              <h3 className="font-bold text-green-600">Auction Settled</h3>
-              <p>
-                Won by <a href={buildExplorerLink(auction.winner.id)} target="_blank" rel="noreferrer" className="font-semibold">{auction.winner.id}</a> for <EthAmount ethAmount={auction.amount} />.
-              </p>
-            </div>
-          )}
+          <div style={styles.separator}></div>
+          <div style={styles.infoBlock}>
+            <div style={styles.infoLabel}>Auction ends in</div>
+            <Countdown endTime={auction.endTime} />
+          </div>
+        </div>
+        <BidInterface
+          auctionId={BigInt(auction.nounId)}
+          currentBid={auction.amount}
+          onBidSuccess={onBidSuccess}
+        />
+      </>
+    )}
+    <div style={styles.bidList}>
+      {auction.bids.slice(0, 3).map((bid) => (
+        <div key={bid.transactionHash} style={styles.bidItem}>
+          <div style={styles.bidderInfo}><div style={styles.bidderAvatar} /><AddressDisplay address={bid.sender} style={styles.bidderName} /></div>
+          <div style={styles.bidAmountContainer}><EthAmount eth={bid.value} style={styles.ethAmount} /><a href={`https://etherscan.io/tx/${bid.transactionHash}`} target="_blank" rel="noopener noreferrer" style={styles.externalLinkIcon}>↗</a></div>
         </div>
       ))}
+    </div>
+    {auction.bids.length > 3 && <div style={styles.viewAllBids}>View all bids</div>}
+    {auction.bids.length === 0 && !auction.settled && <p style={{...styles.viewAllBids, cursor: 'default'}}>No bids yet.</p>}
+  </div>
+);
+
+// --- MAIN EXPORTED COMPONENT ---
+export const AuctionActivity = () => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const { nounsTokenAddress: nounsTokenAddress } = useConfigurableContracts();
+  
+  // Destructure the refetch function from useQuery
+  const { data, loading, error, refetch } = useQuery<GetLatestAuctionsQuery, GetLatestAuctionsQueryVariables>(
+    latestAuctionsQuery, { variables: { first: 25 }, fetchPolicy: 'cache-and-network', notifyOnNetworkStatusChange: true }
+  );
+  
+  // The rest of the logic remains the same...
+  const processedAuctions = useMemo((): ProcessedAuction[] => {
+    if (!data?.auctions) return [];
+    return data.auctions.map(auction => ({
+      nounId: auction.id, endTime: Number(auction.endTime), amount: auction.amount, settled: auction.settled,
+      winner: auction.bidder?.id ? (auction.bidder.id as `0x${string}`) : undefined,
+      bids: [...auction.bids].sort((a, b) => Number(b.blockTimestamp) - Number(a.blockTimestamp)).flatMap(bid => {
+        if (!bid.bidder?.id || !bid.txHash) return [];
+        return [{ sender: bid.bidder.id as `0x${string}`, value: bid.amount, transactionHash: bid.txHash, blockTimestamp: Number(bid.blockTimestamp) }];
+      }),
+    }));
+  }, [data]);
+
+  const seedsContractCalls = useMemo(() => {
+    return processedAuctions.map(auction => ({
+      abi: nounsTokenAbi, address: nounsTokenAddress, functionName: 'seeds', args: [BigInt(auction.nounId)],
+    } as const));
+  }, [processedAuctions, nounsTokenAddress]);
+
+  const { data: seedsResults, isLoading: areSeedsLoading } = useReadContracts({
+    contracts: seedsContractCalls, query: { enabled: seedsContractCalls.length > 0 },
+  });
+
+  const preloadedNouns = useMemo(() => {
+    const nounDataMap = new Map<string, string>();
+    if (!seedsResults || areSeedsLoading) return nounDataMap;
+    seedsResults.forEach((seedResult, index) => {
+      const auction = processedAuctions[index];
+      if (auction && seedResult.status === 'success' && seedResult.result) {
+        const rawSeed = seedResult.result as readonly [number, number, number, number, number];
+        const seed = { background: rawSeed[0], body: rawSeed[1], accessory: rawSeed[2], head: rawSeed[3], glasses: rawSeed[4] };
+        const { parts, background } = getNounData(seed);
+        const svg = buildSVG(parts, ImageData.palette, background);
+        const dataUrl = `data:image/svg+xml;base64,${btoa(svg)}`;
+        nounDataMap.set(auction.nounId, dataUrl);
+      }
+    });
+    return nounDataMap;
+  }, [seedsResults, areSeedsLoading, processedAuctions]);
+
+  const handlePrevious = () => setCurrentIndex(prev => Math.min(processedAuctions.length - 1, prev + 1));
+  const handleNext = () => setCurrentIndex(prev => Math.max(0, prev - 1));
+  
+  if ((loading && !data) || (areSeedsLoading && preloadedNouns.size === 0 && processedAuctions.length > 0)) {
+    return <div>Loading auction activity...</div>;
+  }
+  if (error) {
+    console.error(error);
+    return <div>Error loading activity. Please check console.</div>;
+  }
+  if (!processedAuctions.length) return <div>No auction data found.</div>;
+
+  const currentAuction = processedAuctions[currentIndex];
+
+  return (
+    <div style={styles.activityContainer}>
+      <div style={styles.navigator}>
+        <div style={styles.navControls}>
+          <button onClick={handlePrevious} disabled={currentIndex >= processedAuctions.length - 1} style={{...styles.navButton, ...(currentIndex >= processedAuctions.length - 1 && styles.navButtonDisabled)}}>←</button>
+          <button onClick={handleNext} disabled={currentIndex === 0} style={{...styles.navButton, ...(currentIndex === 0 && styles.navButtonDisabled)}}>→</button>
+        </div>
+        <div style={styles.navDate}>
+          {currentAuction.settled ? 'Ended' : 'Ends'} on {format(new Date(currentAuction.endTime * 1000), 'MMMM dd, yyyy')}
+        </div>
+      </div>
+      <AuctionDetailView
+        auction={currentAuction}
+        preloadedDataUrl={preloadedNouns.get(currentAuction.nounId)}
+        onBidSuccess={() => refetch()} // Pass the refetch function as the callback
+      />
     </div>
   );
 };

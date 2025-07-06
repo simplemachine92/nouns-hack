@@ -4,7 +4,10 @@ import { getNounData, ImageData } from '@noundry/nouns-assets';
 import { buildSVG } from '@nouns/sdk';
 import { useQuery } from '@tanstack/react-query';
 import loadingNoun from '../assets/loading-skull-noun.gif';
-import { useReadNounsTokenSeeds } from '../contracts/nouns-token.gen';
+
+import { useReadContract } from 'wagmi';
+import { nounsTokenAbi } from '../contracts/nouns-token.gen';
+import { useConfigurableContracts } from '../contexts/ConfigurableContractProvider';
 
 export interface INounSeed {
   accessory: number;
@@ -17,8 +20,9 @@ export interface INounSeed {
 export interface NounProps extends HTMLAttributes<HTMLImageElement> {
   nounId?: bigint;
   seed?: INounSeed;
-  loadingNounFallback?: boolean;
-  minFallbackDuration?: number;
+  loadingTransitionDelay?: number;
+  // 1. Add a new prop to accept a pre-rendered data URL
+  preloadedDataUrl?: string;
 }
 
 const fallbackTransparentPixel =
@@ -27,20 +31,34 @@ const fallbackTransparentPixel =
 export const Noun: FC<NounProps> = ({
   nounId,
   seed: providedSeed,
-  loadingNounFallback,
-  minFallbackDuration = 0,
+  loadingTransitionDelay = 300,
+  preloadedDataUrl, // Destructure the new prop
   ...props
 }) => {
-  const [shouldShowFallback, setShouldShowFallback] = useState(false);
-  const [fallbackStartTime, setFallbackStartTime] = useState<number | null>(null);
+  // 2. If pre-loaded data is provided, render it immediately and skip everything else.
+  if (preloadedDataUrl) {
+    return (
+      <img
+        {...props}
+        src={preloadedDataUrl}
+        alt={nounId !== undefined ? `Noun ${nounId}` : 'Noun'}
+      />
+    );
+  }
 
-  // This is the correct way to use the generated hook.
-  const { data: fetchedSeed } = useReadNounsTokenSeeds({
-    // Add a safety check: only pass args if nounId is defined.
+  // --- The rest of the component is now the FALLBACK logic ---
+  // --- It will only run if `preloadedDataUrl` is not provided. ---
+
+  const { nounsTokenAddress: contractAddress } = useConfigurableContracts();
+
+  const { data: fetchedSeed, isLoading: isSeedLoading } = useReadContract({
+    abi: nounsTokenAbi,
+    address: contractAddress,
+    functionName: 'seeds',
     args: nounId !== undefined ? [nounId] : undefined,
     query: {
       enabled: nounId !== undefined && !providedSeed,
-      select: (data) => { // data is already typed from the generated hook
+      select: (data: readonly [number, number, number, number, number]) => {
         if (!data) return undefined;
         return {
           background: data[0],
@@ -55,46 +73,40 @@ export const Noun: FC<NounProps> = ({
 
   const seed = providedSeed ?? fetchedSeed;
 
-  const { data: svg } = useQuery({
+  const { data: svg, isLoading: isSvgLoading } = useQuery({
     queryKey: ['noun-svg', seed],
     queryFn: () => {
-      if (!seed) return null; // Safety check
+      if (!seed) return null;
       const { parts, background } = getNounData(seed);
       return buildSVG(parts, ImageData.palette, background);
     },
     enabled: !!seed,
   });
 
-  // Handle fallback timing logic
-  useEffect(() => {
-    if (!svg && loadingNounFallback && !shouldShowFallback && !fallbackStartTime) {
-      setShouldShowFallback(true);
-      setFallbackStartTime(Date.now());
-    } else if (svg && shouldShowFallback && fallbackStartTime) {
-      const elapsed = Date.now() - fallbackStartTime;
-      if (elapsed >= minFallbackDuration) {
-        setShouldShowFallback(false);
-        setFallbackStartTime(null);
-      } else {
-        const remainingTime = minFallbackDuration - elapsed;
-        const timeoutId = setTimeout(() => {
-          setShouldShowFallback(false);
-          setFallbackStartTime(null);
-        }, remainingTime);
-        return () => clearTimeout(timeoutId);
-      }
-    } else if (!loadingNounFallback && shouldShowFallback) {
-      setShouldShowFallback(false);
-      setFallbackStartTime(null);
-    }
-  }, [svg, loadingNounFallback, shouldShowFallback, fallbackStartTime, minFallbackDuration]);
+  const isDataLoading = (isSeedLoading && !providedSeed) || (isSvgLoading && !!seed && !svg);
+  const [isDisplayingLoader, setIsDisplayingLoader] = useState(isDataLoading);
 
-  if (shouldShowFallback) return <img {...props} src={loadingNoun} />;
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isDataLoading) {
+      setIsDisplayingLoader(true);
+    } else {
+      timer = setTimeout(() => {
+        setIsDisplayingLoader(false);
+      }, loadingTransitionDelay);
+    }
+    return () => clearTimeout(timer);
+  }, [isDataLoading, loadingTransitionDelay]);
+
+  if (isDisplayingLoader) {
+    return <img {...props} src={loadingNoun} alt="Loading Noun..." />;
+  }
 
   return (
     <img
       {...props}
       src={svg ? `data:image/svg+xml;base64,${btoa(svg)}` : fallbackTransparentPixel}
+      alt={nounId !== undefined ? `Noun ${nounId}` : 'Noun'}
     />
   );
 };
