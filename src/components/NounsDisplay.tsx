@@ -125,7 +125,7 @@ export const Noun: FC<NounProps> = ({
           Failed to load Noun data
         </p>
         <p style={{ margin: '8px 0 0 0', fontSize: '0.9em', color: '#6b7280' }}>
-          Please check your contract address in User Settings.
+          Please check your contract address and RPC in User Settings.
         </p>
       </div>
     );
