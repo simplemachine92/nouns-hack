@@ -21,7 +21,6 @@ export interface NounProps extends HTMLAttributes<HTMLImageElement> {
   nounId?: bigint;
   seed?: INounSeed;
   loadingTransitionDelay?: number;
-  // 1. Add a new prop to accept a pre-rendered data URL
   preloadedDataUrl?: string;
 }
 
@@ -32,10 +31,9 @@ export const Noun: FC<NounProps> = ({
   nounId,
   seed: providedSeed,
   loadingTransitionDelay = 300,
-  preloadedDataUrl, // Destructure the new prop
+  preloadedDataUrl,
   ...props
 }) => {
-  // 2. If pre-loaded data is provided, render it immediately and skip everything else.
   if (preloadedDataUrl) {
     return (
       <img
@@ -46,12 +44,15 @@ export const Noun: FC<NounProps> = ({
     );
   }
 
-  // --- The rest of the component is now the FALLBACK logic ---
-  // --- It will only run if `preloadedDataUrl` is not provided. ---
-
   const { nounsTokenAddress: contractAddress } = useConfigurableContracts();
 
-  const { data: fetchedSeed, isLoading: isSeedLoading } = useReadContract({
+  // 1. Destructure isError and error from the hook
+  const { 
+    data: fetchedSeed, 
+    isLoading: isSeedLoading,
+    isError,
+    error,
+  } = useReadContract({
     abi: nounsTokenAbi,
     address: contractAddress,
     functionName: 'seeds',
@@ -97,6 +98,38 @@ export const Noun: FC<NounProps> = ({
     }
     return () => clearTimeout(timer);
   }, [isDataLoading, loadingTransitionDelay]);
+
+  // 2. Add a new render block to handle the error state
+  if (isError) {
+    // Log the technical error for developer debugging
+    console.error("Error fetching Noun seed:", error);
+
+    // Define some simple styles for the error message
+    const errorContainerStyles: React.CSSProperties = {
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: '20px',
+      border: '1px dashed #d1d5db',
+      borderRadius: '12px',
+      backgroundColor: '#f9fafb',
+      height: '100%',
+      minHeight: '200px', // Give it some visible space
+      boxSizing: 'border-box'
+    };
+
+    return (
+      <div style={errorContainerStyles}>
+        <p style={{ margin: 0, fontWeight: 600, color: '#ef4444' }}>
+          Failed to load Noun data
+        </p>
+        <p style={{ margin: '8px 0 0 0', fontSize: '0.9em', color: '#6b7280' }}>
+          Please check your contract address in User Settings.
+        </p>
+      </div>
+    );
+  }
 
   if (isDisplayingLoader) {
     return <img {...props} src={loadingNoun} alt="Loading Noun..." />;

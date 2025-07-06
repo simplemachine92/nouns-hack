@@ -12,7 +12,7 @@ import { GetLatestAuctionsQuery, GetLatestAuctionsQueryVariables } from '../gql/
 import { latestAuctionsQuery } from '../lib/subgraph';
 import { getNounData, ImageData } from '@noundry/nouns-assets';
 import { buildSVG } from '@nouns/sdk';
-// NEW: Import the blockies library
+import { AuctionActivitySkeleton } from './AuctionActivitySkeleton';
 import makeBlockie from 'ethereum-blockies-base64';
 
 
@@ -124,7 +124,6 @@ const AuctionDetailView = ({ auction, preloadedDataUrl, onBidSuccess }: { auctio
         </div>
       ))}
     </div>
-    {auction.bids.length > 3 && <div style={styles.viewAllBids}>View all bids</div>}
     {auction.bids.length === 0 && !auction.settled && <p style={{...styles.viewAllBids, cursor: 'default'}}>No bids yet.</p>}
   </div>
 );
@@ -185,7 +184,7 @@ export const AuctionActivity = () => {
   }
   if (error) {
     console.error(error);
-    return <div>Error loading activity. Please check console.</div>;
+    return <AuctionActivitySkeleton/>;
   }
   if (!processedAuctions.length) return <div>No auction data found.</div>;
 
