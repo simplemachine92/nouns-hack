@@ -2,7 +2,7 @@
 
 ## Open-Source and Decentralized Nouns Auction Client made for the PL_Genesis: Modular Worlds Hackathon
 
-[text](https://nounsforever.eth.limo/)
+[IPFS Hosted Current Version](https://nounsforever.eth.limo/)
 
 A configurable and reusable React component for viewing and interacting with Nouns-style on-chain auctions. This component fetches live auction data from user configured Graph, displays Noun SVGs, and allows users to place bids through wallet interactions powered by wagmi and user-defined RPC and contract addresses.
 
