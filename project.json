@@ -1,0 +1,14 @@
+{
+  "name": "Nouns Forever",
+  "description": "What it does, how it works, and the tech used.",
+  "tagline": "A decentralized Nouns Auction client that uses user-defined Graph endpoint, contract addresses, and RPC. It is hosted on IPFS and accessible at the demo url.",
+  "team": [
+    {
+      "name": "Justin Pulley 'nowonder'",
+      "email": "justinpulley92@gmail.com"
+    }
+  ],
+  "demo_url": "https://nounsforever.eth.limo/",
+  "video_url": "https://streamable.com/yms0wx",
+  "technologies": ["React", "Vite", "IPFS", "ENS", "Limo", "nouns-sdk"]
+}
